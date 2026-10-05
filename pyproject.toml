@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+exclude = [".venv", "venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]   # pycodestyle, pyflakes, import sorting
+ignore = ["E501"]          # long lines are fine (SQL / prompt strings)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

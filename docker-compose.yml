@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data # persist chatbot.db across container restarts
+
+  # Uncomment once you migrate from AsyncSqliteSaver to AsyncPostgresSaver
+  # (see README > Further improvements). Point DB_PATH / a new PG_DSN env
+  # var at this service instead of the local sqlite file.
+  # postgres:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: chatbot
+  #     POSTGRES_PASSWORD: chatbot
+  #     POSTGRES_DB: chatbot
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+
+# volumes:
+#   pgdata:

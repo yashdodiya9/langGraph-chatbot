@@ -1,0 +1,20 @@
+# Environment / secrets
+.env
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data (sqlite db + WAL files) - keep the folder, not its contents
+data/*
+!data/.gitkeep
+
+# OS
+.DS_Store

@@ -1,0 +1,17 @@
+# secrets - inject at runtime via env_file / --env-file, never bake into the image
+.env
+
+# local environments, caches and VCS
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.git/
+.github/
+.DS_Store
+
+# runtime data (mounted as a volume in docker-compose)
+data/*
+!data/.gitkeep
