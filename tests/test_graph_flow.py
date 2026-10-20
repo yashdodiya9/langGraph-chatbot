@@ -149,7 +149,7 @@ def test_sensitive_tool_reject_skips_tool(monkeypatch, tid, stock_http):
     ai = next(m for m in follow_up if isinstance(m, AIMessage))
     tool_msg = next(m for m in follow_up if isinstance(m, ToolMessage))
     assert [c["id"] for c in ai.tool_calls] == [tool_msg.tool_call_id] == ["call_1"]
-    assert "cancelled" in tool_msg.content.lower()
+    assert "rejected" in tool_msg.content.lower()  # the model is told explicitly
 
 
 def _two_calls():
@@ -189,8 +189,10 @@ def test_partial_rejection_runs_only_approved_calls(monkeypatch, tid, stock_http
     assert pending_interrupt(tid) is None
     follow_up = model.received[-1]
     ai = next(m for m in follow_up if isinstance(m, AIMessage))
-    tool_ids = [m.tool_call_id for m in follow_up if isinstance(m, ToolMessage)]
-    assert [c["id"] for c in ai.tool_calls] == tool_ids == ["c1"]  # read-only call ran, pairs valid
+    tool_msgs = {m.tool_call_id: m.content for m in follow_up if isinstance(m, ToolMessage)}
+    # every call is answered exactly once: c1 ran, c2 is reported back as rejected
+    assert sorted(c["id"] for c in ai.tool_calls) == sorted(tool_msgs) == ["c1", "c2"]
+    assert "rejected" in tool_msgs["c2"].lower()
 
 
 def test_title_generation_pin_and_delete_lifecycle(monkeypatch, tid):
@@ -256,3 +258,6 @@ def test_two_sensitive_calls_each_get_their_own_approval(monkeypatch, tid, stock
     assert pending_interrupt(tid) is None
     assert len(stock_http) == 1  # only the approved call ran
     assert messages(tid)[-1].content == "done"
+    # the model is told the second call was rejected, so it doesn't just ask for it again
+    tool_msgs = {m.tool_call_id: m.content for m in messages(tid) if isinstance(m, ToolMessage)}
+    assert "rejected" in tool_msgs["c2"].lower() and "rejected" not in tool_msgs["c1"].lower()

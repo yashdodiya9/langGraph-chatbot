@@ -12,6 +12,11 @@ from app.backend.state import ChatState
 from app.backend.tools import tools_by_name
 from app.config import SENSITIVE_TOOLS
 
+REJECTED_MESSAGE = (
+    "The user REJECTED this action, so it was NOT performed. Do not call this tool again "
+    "for it unless the user explicitly asks; tell the user it was not done."
+)
+
 
 def _missing_required_args(target_tool, args: dict) -> list[str]:
     """Required fields (per the tool's schema) the model left empty/None."""
@@ -48,11 +53,11 @@ async def human_review(state: ChatState):
       2) sensitive tool         -> interrupt "approval": approve (optionally edited) or reject
 
     Outcomes:
-      - all approved  : the AI message is updated with the (possibly edited) calls -> run tools
-      - some rejected : rejected calls are dropped from the AI message, the rest still run
-      - all rejected  : the AI message is kept as-is and every call gets a "cancelled" ToolMessage,
-                        so the chat history stays a valid assistant(tool_calls) -> tool(result) sequence
-                        that the LLM API accepts; the graph then goes straight back to chat_node.
+      - approved calls keep their (possibly edited) args and are run by the tools node
+      - rejected calls stay in the AI message but are answered right here with a
+        REJECTED_MESSAGE ToolMessage, so the model is told explicitly that the user
+        declined them (instead of the call silently vanishing, which made the model
+        simply ask for the same action again)
     """
     last_message = state["messages"][-1]
     tool_calls = [dict(c) for c in (getattr(last_message, "tool_calls", None) or [])]
@@ -96,20 +101,30 @@ async def human_review(state: ChatState):
         call["args"] = tool_args
         approved.append(call)
 
-    if not approved:  # everything was rejected: answer each call so the history stays valid
-        cancelled = [
-            ToolMessage(content="Action cancelled by the user.", tool_call_id=c["id"], name=c["name"])
-            for c in rejected
-        ]
-        return {"messages": cancelled}
+    rejected_ids = {c["id"] for c in rejected}
+    edited = {c["id"]: c for c in approved}
+    # Keep every call (in order) so each one gets exactly one ToolMessage answer.
+    all_calls = [edited.get(c["id"], c) for c in tool_calls]
+    rejections = [
+        ToolMessage(content=REJECTED_MESSAGE, tool_call_id=c["id"], name=c["name"])
+        for c in tool_calls
+        if c["id"] in rejected_ids
+    ]
+    return {"messages": [_rebuild_ai_message(last_message, all_calls), *rejections]}
 
-    return {"messages": [_rebuild_ai_message(last_message, approved)]}
+
+def pending_tool_calls(messages) -> tuple[AIMessage | None, list[dict]]:
+    """The latest AI message and those of its tool calls that have no ToolMessage yet."""
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            answered = {m.tool_call_id for m in messages[i + 1 :] if isinstance(m, ToolMessage)}
+            return msg, [c for c in msg.tool_calls if c["id"] not in answered]
+    return None, []
 
 
 def after_review(state: ChatState):
-    """Route after human_review: run the tools if calls are still pending, otherwise
-    (everything was rejected, so the last message is a ToolMessage) go back to the LLM."""
-    last = state["messages"][-1]
-    if isinstance(last, AIMessage) and last.tool_calls:
-        return "tools"
-    return "chat_node"
+    """Route after human_review: run the tools if any approved call is still unanswered,
+    otherwise (everything was rejected) go straight back to the LLM."""
+    _, pending = pending_tool_calls(state["messages"])
+    return "tools" if pending else "chat_node"

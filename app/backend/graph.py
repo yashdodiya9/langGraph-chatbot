@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from app.backend.human_review import after_review, human_review
+from app.backend.human_review import _rebuild_ai_message, after_review, human_review, pending_tool_calls
 from app.backend.llm import llm_with_tools
 from app.backend.persistence.checkpointer import checkpointer
 from app.backend.state import ChatState
@@ -47,6 +47,16 @@ async def chat_node(state: ChatState, config: RunnableConfig):
 tool_node = ToolNode(tools) if tools else None
 
 
+async def run_approved_tools(state: ChatState, config: RunnableConfig):
+    """Runs only the tool calls human_review left unanswered (the approved ones);
+    rejected calls were already answered with a 'rejected' ToolMessage."""
+    ai_message, pending = pending_tool_calls(state["messages"])
+    if not pending:
+        return {}
+    result = await tool_node.ainvoke({"messages": [_rebuild_ai_message(ai_message, pending)]}, config)
+    return {"messages": result["messages"]}
+
+
 def build_graph():
     graph = StateGraph(ChatState)
     graph.add_node("chat_node", chat_node)
@@ -54,7 +64,7 @@ def build_graph():
 
     if tool_node:
         graph.add_node("human_review", human_review)
-        graph.add_node("tools", tool_node)
+        graph.add_node("tools", run_approved_tools)
         graph.add_conditional_edges("chat_node", tools_condition, {"tools": "human_review", END: END})
         graph.add_conditional_edges("human_review", after_review, {"tools": "tools", "chat_node": "chat_node"})
         graph.add_edge("tools", "chat_node")
