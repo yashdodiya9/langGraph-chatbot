@@ -94,13 +94,12 @@ tool calls in one message, auto-titles, pin, delete) and headless Streamlit UI t
   multi-user deployment, swap `app/backend/persistence/checkpointer.py` to
   `AsyncPostgresSaver` - it's the same interface, so nothing else in the codebase changes.
 - **MCP integration is disabled by default** (`ENABLE_MCP_TOOLS=false`) because connecting
-  to unreachable/misconfigured MCP servers at startup is a common source of slow boots and
-  flaky tests. The `from langchain.mcp import MCPAdapter` import in
-  `app/backend/tools/mcp_tools.py` is carried over from the original project as-is; depending
-  on your installed langchain/langgraph version you may need the separate
-  `langchain-mcp-adapters` package (`MultiServerMCPClient`) instead. Update that module to
-  match whatever MCP client library you're actually using before setting
-  `ENABLE_MCP_TOOLS=true`.
+  to unreachable MCP servers at startup slows boots and makes tests flaky. When enabled,
+  `app/backend/tools/mcp_tools.py` loads tools with `langchain-mcp-adapters`
+  (`MultiServerMCPClient`) from a local stdio server (`mcp_servers/arith_server.py`: add,
+  multiply) and a remote expense server. Tools are named `<server>_<tool>`, so
+  `expense_add_expense` matches `SENSITIVE_TOOLS` and goes through the approval step. A server
+  that can't be reached is skipped with a warning; the app still starts with its built-in tools.
 - **Web search needs the `ddgs` package** (not the older `duckduckgo-search`) with current
   `langchain-community` versions - it's already in `requirements.txt`.
 - **`langchain-community` is being sunset** upstream; you'll see a DeprecationWarning for the PDF
