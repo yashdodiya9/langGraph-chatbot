@@ -79,8 +79,9 @@ def get_pending_interrupt(config):
     call instead of finishing. Returns the interrupt's payload dict, or None
     if the turn actually completed."""
     state = chatbot.get_state(config)
-    if not state.next:
-        return None
+    # Don't gate on state.next: when a resumed node raises a SECOND interrupt (e.g. two
+    # sensitive tool calls in one message), LangGraph can report next=() while the task
+    # is still paused, so check the tasks' interrupts directly.
     for task in state.tasks:
         if task.interrupts:
             return task.interrupts[0].value

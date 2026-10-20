@@ -138,3 +138,33 @@ def test_approval_panel_resumes_graph(monkeypatch):
     assert not at.exception
     assert len(at.warning) == 0
     assert _bubble_text(at.chat_message[-1]) == "AAPL is 123.45"
+
+def test_second_approval_panel_shows_the_second_calls_args(monkeypatch):
+    """Regression: both panels reused the same widget keys, so the second form showed
+    the first call's values and approving it re-sent the first call's arguments."""
+    monkeypatch.setattr(review_mod, "SENSITIVE_TOOLS", {"get_stock_price"})
+    monkeypatch.setattr(stock.requests, "get", lambda url, timeout=None: FakeHTTPResponse())
+    monkeypatch.setattr(thread_meta, "model", ScriptedChatModel(responses=[AIMessage(content="Stocks")]))
+    two_calls = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_stock_price", "args": {"symbol": "AAPL"}, "id": "c1"},
+            {"name": "get_stock_price", "args": {"symbol": "TSLA"}, "id": "c2"},
+        ],
+    )
+    monkeypatch.setattr(
+        graph_mod, "llm_with_tools", ScriptedChatModel(responses=[two_calls, AIMessage(content="both done")])
+    )
+
+    at = _open_app()
+    at.chat_input[0].set_value("AAPL and TSLA").run()
+    assert [t.value for t in at.text_input] == ["AAPL"]
+
+    next(b for b in at.button if "Approve" in b.label).click().run()
+    assert not at.exception
+    assert [t.value for t in at.text_input] == ["TSLA"]  # second call's own values
+
+    next(b for b in at.button if "Approve" in b.label).click().run()
+    assert not at.exception
+    assert len(at.warning) == 0
+    assert _bubble_text(at.chat_message[-1]) == "both done"

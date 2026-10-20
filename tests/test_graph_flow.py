@@ -67,8 +67,6 @@ def say(text, thread_id):
 def pending_interrupt(thread_id):
     """Same logic as get_pending_interrupt() in the frontend."""
     state = graph_mod.chatbot.get_state(cfg(thread_id))
-    if not state.next:
-        return None
     for task in state.tasks:
         if task.interrupts:
             return task.interrupts[0].value
@@ -227,3 +225,34 @@ def test_title_falls_back_to_message_when_llm_fails(monkeypatch):
     title = run_async(thread_meta._agenerate_title("Explain how vector databases work in simple terms please"))
     assert title.startswith("Explain how vector databases work")
     assert len(title) <= 41
+
+
+def _two_sensitive_calls():
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_stock_price", "args": {"symbol": "AAPL"}, "id": "c1"},
+            {"name": "get_stock_price", "args": {"symbol": "TSLA"}, "id": "c2"},
+        ],
+    )
+
+
+def test_two_sensitive_calls_each_get_their_own_approval(monkeypatch, tid, stock_http):
+    """Regression: after approving the first of two sensitive calls, the second approval
+    was not detected (LangGraph reported next=()), so the turn stalled."""
+    monkeypatch.setattr(review_mod, "SENSITIVE_TOOLS", {"get_stock_price"})
+    use_llm(monkeypatch, _two_sensitive_calls(), AIMessage(content="done"))
+
+    say("both", tid)
+    first = pending_interrupt(tid)
+    assert first["args"] == {"symbol": "AAPL"} and first["call_id"] == "c1"
+
+    run(Command(resume={"action": "approve", "args": {"symbol": "AAPL"}}), tid)
+    second = pending_interrupt(tid)
+    assert second["args"] == {"symbol": "TSLA"} and second["call_id"] == "c2"
+    assert stock_http == []  # nothing runs until every sensitive call is decided
+
+    run(Command(resume={"action": "reject"}), tid)
+    assert pending_interrupt(tid) is None
+    assert len(stock_http) == 1  # only the approved call ran
+    assert messages(tid)[-1].content == "done"

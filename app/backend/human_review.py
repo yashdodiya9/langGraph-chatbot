@@ -71,6 +71,7 @@ async def human_review(state: ChatState):
                 {
                     "kind": "clarification",
                     "tool": tool_name,
+                    "call_id": call.get("id"),
                     "field": field,
                     "message": f"I need a value for **{field}** to call `{tool_name}`. What should it be?",
                 }
@@ -82,6 +83,7 @@ async def human_review(state: ChatState):
                 {
                     "kind": "approval",
                     "tool": tool_name,
+                    "call_id": call.get("id"),
                     "args": tool_args,
                     "message": f"About to call `{tool_name}` with these arguments. Approve or reject?",
                 }
